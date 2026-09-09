@@ -92,3 +92,16 @@ describe('frontend record contract',()=>{
  expect(await t.query(anyApi.sync.head,{token:alice})).toEqual({cursor:0});
  });
 });
+it('changes admin credential securely, revokes other sessions and rejects merchant/wrong-current',async()=>{
+ const salt='12'.repeat(16),old='Original-test-123',next='Next-test-456';const passwordHash=pbkdf2Sync(old,Buffer.from(salt,'hex'),150000,32,'sha256').toString('hex');
+ vi.stubEnv('ADMIN_PASSWORD_SALT',salt);vi.stubEnv('ADMIN_PASSWORD_HASH',passwordHash);
+ try{const {t,admin,alice}=await setup();const second=await t.action(anyApi.auth.login,{role:'admin',phone:'',password:old});
+ await expect(t.action(anyApi.auth.changeAdminPassword,{token:alice,current:old,password:next})).rejects.toThrow();
+ await expect(t.action(anyApi.auth.changeAdminPassword,{token:admin,current:'incorrect',password:next})).rejects.toThrow();
+ await t.action(anyApi.auth.changeAdminPassword,{token:admin,current:old,password:next});
+ expect(await t.query(anyApi.access.me,{token:second.token})).toBeNull();expect((await t.query(anyApi.access.status,{token:second.token})).status).toBe('unauthorized');
+ expect((await t.query(anyApi.access.me,{token:admin}))?.role).toBe('admin');expect((await t.query(anyApi.access.me,{token:alice}))?.role).toBe('merchant');
+ await expect(t.action(anyApi.auth.login,{role:'admin',phone:'',password:old})).rejects.toThrow();const renewed=await t.action(anyApi.auth.login,{role:'admin',phone:'',password:next});expect(renewed.role).toBe('admin');
+ const stored=await t.run(ctx=>ctx.db.query('adminCredentials').unique());expect(stored?.passwordHash).not.toBe(next);expect(stored).not.toHaveProperty('password');
+ }finally{vi.unstubAllEnvs();}
+});

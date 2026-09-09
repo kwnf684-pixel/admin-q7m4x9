@@ -10,12 +10,13 @@ export const login=action({args:{role:v.union(v.literal('admin'),v.literal('merc
  if(a.phone.length>40||a.password.length>256)throw new ConvexError('INVALID_CREDENTIALS');const phone=normalizePhone(a.phone);
  if(!await ctx.runMutation(anyApi.access.reserve,{key:a.role==='admin'?'admin':phone}))throw new ConvexError('TOO_MANY_ATTEMPTS');
  const m=await ctx.runQuery(anyApi.access.lookup,{role:a.role,phone});
- const salt=a.role==='admin'?process.env.ADMIN_PASSWORD_SALT:m?.salt;
- const expected=a.role==='admin'?process.env.ADMIN_PASSWORD_HASH:m?.passwordHash;
+ const adminCredential=a.role==='admin'?await ctx.runQuery(anyApi.access.adminCredential,{}):null;
+ const salt=a.role==='admin'?adminCredential.salt:m?.salt;
+ const expected=a.role==='admin'?adminCredential.passwordHash:m?.passwordHash;
  if(a.role==='admin'&&(!salt||!expected))throw new ConvexError('ADMIN_NOT_CONFIGURED');
  const actual=hash(a.password,salt??'00'.repeat(16));const target=typeof expected==='string'&&/^[a-f0-9]{64}$/i.test(expected)?expected:'00'.repeat(32);
  if(!timingSafeEqual(Buffer.from(actual,'hex'),Buffer.from(target,'hex'))||!expected)throw new ConvexError('INVALID_CREDENTIALS');
- const token=randomBytes(32).toString('hex');const profile=await ctx.runMutation(anyApi.access.issue,{tokenHash:createHash('sha256').update(token).digest('hex'),role:a.role,...(m?{merchantId:m._id,expectedHash:expected}:{})});return {token,...profile};
+ const token=randomBytes(32).toString('hex');const profile=await ctx.runMutation(anyApi.access.issue,{tokenHash:createHash('sha256').update(token).digest('hex'),role:a.role,expectedHash:expected,...(m?{merchantId:m._id}:{})});return {token,...profile};
 }});
 
 export const changePassword=action({args:{token:v.string(),current:v.string(),password:v.string()},handler:async(ctx,a)=>{
@@ -24,4 +25,13 @@ export const changePassword=action({args:{token:v.string(),current:v.string(),pa
  if(!await ctx.runMutation(anyApi.access.reserve,{key:'change:'+credential.id}))throw new ConvexError('TOO_MANY_ATTEMPTS');
  if(!timingSafeEqual(Buffer.from(hash(a.current,credential.salt),'hex'),Buffer.from(credential.passwordHash,'hex')))throw new ConvexError('INVALID_CREDENTIALS');
  const salt=randomBytes(16).toString('hex');return await ctx.runMutation(anyApi.access.replacePassword,{token:a.token,previous:credential.passwordHash,salt,passwordHash:hash(a.password,salt)});
+}});
+export const changeAdminPassword=action({args:{token:v.string(),current:v.string(),password:v.string()},handler:async(ctx,a)=>{
+ await ctx.runQuery(anyApi.access.checkAdmin,{token:a.token});
+ if(a.current.length>256||a.password.length<8||a.password.length>128)throw new ConvexError('INVALID_PASSWORD');
+ if(!await ctx.runMutation(anyApi.access.reserve,{key:'change:admin'}))throw new ConvexError('TOO_MANY_ATTEMPTS');
+ const credential=await ctx.runQuery(anyApi.access.adminCredential,{});
+ if(!credential.salt||!credential.passwordHash)throw new ConvexError('ADMIN_NOT_CONFIGURED');
+ if(!timingSafeEqual(Buffer.from(hash(a.current,credential.salt),'hex'),Buffer.from(credential.passwordHash,'hex')))throw new ConvexError('INVALID_CREDENTIALS');
+ const salt=randomBytes(16).toString('hex');return ctx.runMutation(anyApi.access.replaceAdminPassword,{token:a.token,previous:credential.passwordHash,salt,passwordHash:hash(a.password,salt)});
 }});
