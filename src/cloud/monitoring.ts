@@ -1,0 +1,2 @@
+import * as Sentry from '@sentry/react';
+export function startMonitoring(){if(import.meta.env.VITE_SENTRY_DSN)Sentry.init({dsn:import.meta.env.VITE_SENTRY_DSN,environment:import.meta.env.PROD?'production':'development',sendDefaultPii:false,defaultIntegrations:false,integrations:[Sentry.browserApiErrorsIntegration(),Sentry.globalHandlersIntegration()],beforeSend(event){delete event.user;delete event.request;delete event.extra;delete event.breadcrumbs;return event;}});}

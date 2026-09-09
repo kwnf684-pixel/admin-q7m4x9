@@ -1,0 +1,3 @@
+import {startMonitoring} from './cloud/monitoring';
+import React from 'react';import ReactDOM from 'react-dom/client';import {BrowserRouter,Routes,Route,Navigate} from 'react-router-dom';import AdminApp from './admin/AdminApp';import LocalAccess from './components/LocalAccess';import '@fontsource-variable/noto-sans-arabic';import './styles.css';import './components/premium/premium.css';startMonitoring();
+ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><BrowserRouter basename={import.meta.env.BASE_URL}><LocalAccess><Routes><Route path="/overdue" element={<AdminApp/>}/><Route path="/merchants" element={<AdminApp/>}/><Route path="*" element={<Navigate to="/merchants" replace/>}/></Routes></LocalAccess></BrowserRouter></React.StrictMode>);
