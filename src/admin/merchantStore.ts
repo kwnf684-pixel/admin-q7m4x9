@@ -27,10 +27,10 @@ export async function saveMerchant(id:string|null,input:{name:string;whatsapp:st
  if((!id||input.password)&&input.password.length<4)throw Error('كلمة المرور يجب ألا تقل عن 4 أحرف أو أرقام.');
  const {cloud,token}=connection();await cloud.action(ref<'action'>('merchants:save'),{token,...(id?{id}:{}),name,whatsapp,password:input.password,days,renew:input.renew===true});
 }
-export async function deleteMerchant(id:string,code:string){if(!code.trim())throw Error('أدخل رمز تأكيد الحذف.');const {cloud,token}=connection();await cloud.mutation(ref<'mutation'>('merchants:remove'),{token,id,code:code.trim()});}
+export async function deleteMerchant(id:string,code:string){if(!code.trim())throw Error('أدخل رمز تأكيد الحذف.');const {cloud,token}=connection();await cloud.mutation(ref<'mutation'>('merchants:remove'),{token,id,code:code.trim().replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)))});publish({rows:snapshot.rows.filter(r=>r.id!==id)});retryMerchants();}
 export async function freezeMerchant(id:string,frozen:boolean){const {cloud,token}=connection();await cloud.mutation(ref<'mutation'>('merchants:freeze'),{token,id,frozen});}
 export function subscriptionStatus(merchant:Pick<Merchant,'expiresAt'>&Partial<Pick<Merchant,'subscriptionDays'>>,now=Date.now()){
  const expires=Date.parse(merchant.expiresAt),day=86400000,elapsed=now-expires;
  return {remaining:Math.min(merchant.subscriptionDays??Infinity,Math.max(0,Math.ceil(-elapsed/day))),overdue:elapsed>=day,lateDays:Math.max(0,Math.floor(elapsed/day)),inGrace:elapsed>=0&&elapsed<3*day,graceRemaining:elapsed>=0?Math.max(0,Math.ceil((3*day-elapsed)/day)):3,graceEnded:elapsed>=3*day};
 }
-export function reminderLink(merchant:Pick<Merchant,'name'|'whatsapp'>){const message=`مرحبًا ${merchant.name}، انتهى اشتراكك في أعمال المستقبل. هل ترغب بتجديد الاشتراك، أم ترك الخدمة، أم تواجه مشكلة؟ نحن هنا لمساعدتك متى احتجت. لديك مهلة احتياط 3 أيام من تاريخ انتهاء الاشتراك.`;return `https://wa.me/${merchant.whatsapp}?text=${encodeURIComponent(message)}`;}
+export function reminderLink(merchant:Pick<Merchant,'name'|'whatsapp'|'expiresAt'>){const remaining=subscriptionStatus(merchant).remaining;const message=`مرحبًا ${merchant.name}، ${remaining?`يتبقى ${remaining} يوم على انتهاء اشتراكك`:'انتهى اشتراكك'} في أعمال المستقبل. هل ترغب بتجديد الاشتراك أم تواجه مشكلة؟ نحن هنا لمساعدتك.`;return `https://wa.me/${merchant.whatsapp}?text=${encodeURIComponent(message)}`;}

@@ -1,6 +1,7 @@
 import {defineSchema,defineTable} from 'convex/server';
 import {v} from 'convex/values';
 export default defineSchema({
+ systemSettings:defineTable({key:v.string(),contactPhone:v.string()}).index('key',['key']),
  adminCredentials:defineTable({salt:v.string(),passwordHash:v.string()}),
  merchants:defineTable({name:v.string(),whatsapp:v.string(),salt:v.string(),passwordHash:v.string(),subscriptionDays:v.number(),startsAt:v.number(),expiresAt:v.number(),frozen:v.boolean(),deleted:v.boolean(),revision:v.number()}).index('phone',['whatsapp']),
  revocations:defineTable({tokenHash:v.string(),expiresAt:v.number()}).index('hash',['tokenHash']),

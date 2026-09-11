@@ -1,7 +1,7 @@
 import {query,mutation} from './model';
 import {v,ConvexError} from 'convex/values';
 import {session,digest} from './access';
-const collections=['customers','transfers','rates','rateLog','cash','exchange','wallets'];
+const collections=['customers','transfers','rates','rateLog','cash','exchange','wallets','inventory','inventoryCustomers','inventorySales'];
 const change=v.object({collection:v.string(),id:v.string(),value:v.any(),baseVersion:v.number()});
 function validTree(value:unknown,depth=0):boolean{if(depth>12)return false;if(value===null||typeof value==='boolean')return true;if(typeof value==='number')return Number.isFinite(value);if(typeof value==='string')return value.length<=16000;if(Array.isArray(value))return value.length<=1500&&value.every(x=>validTree(x,depth+1));if(typeof value==='object')return Object.entries(value).length<=100&&Object.entries(value).every(([k,x])=>!['__proto__','constructor','prototype'].includes(k)&&validTree(x,depth+1));return false;}
 function validate(collection:string,id:string,value:unknown){
@@ -18,8 +18,8 @@ function validate(collection:string,id:string,value:unknown){
  transfers:['date','sender','recipient','currency','status','direction','office','senderPhone','recipientPhone','senderAddress','recipientAddress','notes','reason','voucher','deliveredAt'],
  rates:['base','counter','name','user','updated','notes'],rateLog:['base','counter','name','user','updated','notes'],
  cash:['date','party','currency','type','partyType','reason','reference','description','notes'],
- exchange:['date','party','currency','counter','type','status','box','user','description','notes'],wallets:['name']};
- const numbers:Record<string,string[]>={customers:[],transfers:['amount','commission'],rates:['buy','sell'],rateLog:['buy','sell'],cash:['amount'],exchange:['amount','rate','commission','counterpart'],wallets:['balance']};
+ exchange:['date','party','currency','counter','type','status','box','user','description','notes'],inventorySales:['customerId','customerName','date','currency'],inventoryCustomers:['name','phone','details'],inventory:['name'],wallets:['name']};
+ const numbers:Record<string,string[]>={customers:[],transfers:['amount','commission'],rates:['buy','sell'],rateLog:['buy','sell'],cash:['amount'],exchange:['amount','rate','commission','counterpart'],inventorySales:['total'],inventoryCustomers:[],inventory:['quantity','purchasePrice','salePrice'],wallets:['balance']};
  if(!strings[collection].every(k=>typeof r[k]==='string')||!numbers[collection].every(k=>typeof r[k]==='number'&&Number.isFinite(r[k])))fail();
  const text=(k:string)=>typeof r[k]==='string'&&r[k].trim().length>0;
  const numeric=(k:string,min:number,max=Infinity,exclusive=false)=>typeof r[k]==='number'&&Number.isFinite(r[k])&&(exclusive?r[k]>min:r[k]>=min)&&r[k]<=max;
@@ -34,6 +34,15 @@ function validate(collection:string,id:string,value:unknown){
  if(collection==='transfers'&&(!text('sender')||!text('recipient')||!currency('currency')||!date('date')||!numeric('amount',0,1e12,true)||!numeric('commission',0,1e12)||!enumeration('direction',['incoming','outgoing'])||!enumeration('status',['مسلمة','معلقة','قيد المعالجة','ملغاة','بانتظار التسليم','قيد المراجعة'])||(r.deliveredAt!==''&&!date('deliveredAt'))))fail();
  if((collection==='rates'||collection==='rateLog')&&(!text('name')||!currency('base')||!currency('counter')||r.base===r.counter||!numeric('buy',0,Infinity,true)||!numeric('sell',Number(r.buy))||!date('updated')))fail();
  if(collection==='exchange'&&(!text('party')||!date('date')||!currency('currency')||!currency('counter')||r.currency===r.counter||!enumeration('type',['شراء','بيع'])||!enumeration('status',['مكتملة','معلقة','ملغاة'])||!numeric('amount',0,1e12,true)||!numeric('rate',0,1e6,true)||!numeric('counterpart',0,1e18,true)||!numeric('commission',0,Number(r.counterpart))||Math.abs(Number(r.counterpart)-Number(r.amount)*Number(r.rate))>Math.max(1e-6,Number(r.counterpart)*1e-12)))fail();
+ if(collection==='inventorySales'){
+ if(!text('customerId')||!text('customerName')||!date('date')||!currency('currency')||!numeric('total',0,1e18,true)||!Array.isArray(r.lines)||!r.lines.length||r.lines.length>50)return fail();let total=0;const items=new Set();for(const line of r.lines){if(!line||typeof line.itemId!=='string'||items.has(line.itemId)||typeof line.name!=='string'||![line.quantity,line.purchasePrice,line.salePrice].every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1e12)||line.quantity<=0)return fail();items.add(line.itemId);total+=line.quantity*line.salePrice;}if(Math.abs(total-Number(r.total))>0.000001)fail();
+ }
+ if(collection==='inventoryCustomers'){
+ if(!text('name')||!text('phone'))fail();const rows=r.transactions??[];if(!Array.isArray(rows))return fail();const ids=new Set<string>();const totals:Record<string,number>=Object.create(null);
+ for(const x of rows){if(!x||typeof x.id!=='string'||ids.has(x.id)||typeof x.date!=='string'||!Number.isFinite(Date.parse(x.date))||!['debt','payment'].includes(x.type)||typeof x.currency!=='string'||!x.currency.trim()||['__proto__','constructor','prototype'].includes(x.currency)||typeof x.amount!=='number'||!Number.isFinite(x.amount)||x.amount<=0||x.amount>1e12||typeof x.details!=='string')return fail();ids.add(x.id);totals[x.currency]=Math.round(((totals[x.currency]||0)+(x.type==='debt'?x.amount:-x.amount))*1e6)/1e6;}
+ if(Object.values(totals).some(n=>!Number.isFinite(n)||n<0))fail();
+ }
+ if(collection==='inventory'&&(!text('name')||!numeric('quantity',0,1e12)||!numeric('purchasePrice',0,1e12)||!numeric('salePrice',0,1e12)))fail();
  if(collection==='wallets'&&(!text('name')||!numeric('balance',0,1e12)))fail();
 }
 export const head=query({args:{token:v.string()},handler:async(ctx,{token})=>{const {m}=await session(ctx,await digest(token));if(!m)throw new ConvexError('MERCHANT_REQUIRED');return {cursor:m.revision};}});

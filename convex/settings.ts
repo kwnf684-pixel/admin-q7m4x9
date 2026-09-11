@@ -1,0 +1,5 @@
+import {query,mutation} from './model';
+import {v,ConvexError} from 'convex/values';
+import {session,digest} from './access';
+export const contact=query({args:{},handler:async ctx=>{const row=await ctx.db.query('systemSettings').withIndex('key',q=>q.eq('key','contact')).unique();return {phone:row?.contactPhone||'9647741112113'};}});
+export const saveContact=mutation({args:{token:v.string(),phone:v.string()},handler:async(ctx,a)=>{await session(ctx,await digest(a.token),true);let phone=a.phone.replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[\s()+-]/g,'');if(phone.startsWith('00'))phone=phone.slice(2);if(/^07\d{9}$/.test(phone))phone='964'+phone.slice(1);if(!/^[1-9]\d{7,14}$/.test(phone))throw new ConvexError('INVALID_PHONE');const row=await ctx.db.query('systemSettings').withIndex('key',q=>q.eq('key','contact')).unique();if(row)await ctx.db.patch(row._id,{contactPhone:phone});else await ctx.db.insert('systemSettings',{key:'contact',contactPhone:phone});return {phone};}});

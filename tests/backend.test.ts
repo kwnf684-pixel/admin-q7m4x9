@@ -105,3 +105,27 @@ it('changes admin credential securely, revokes other sessions and rejects mercha
  const stored=await t.run(ctx=>ctx.db.query('adminCredentials').unique());expect(stored?.passwordHash).not.toBe(next);expect(stored).not.toHaveProperty('password');
  }finally{vi.unstubAllEnvs();}
 });
+
+it('inventory persists, isolates tenants, validates values and supports edit/delete',async()=>{
+ const {t,alice,bob}=await setup();const row={id:'item1',name:'مادة',quantity:3,purchasePrice:5,salePrice:8};
+ const push=(value:unknown,baseVersion:number,operationId:string)=>t.mutation(anyApi.sync.push,{token:alice,operationId,changes:[{collection:'inventory',id:row.id,value,baseVersion}]});
+ expect(await push(row,0,'inventory-add')).toEqual({ok:true,cursor:1});
+ expect((await t.query(anyApi.sync.pull,{token:bob,since:0})).changes).toEqual([]);
+ for(const patch of [{quantity:-1},{purchasePrice:-1},{salePrice:1e12+1},{name:' '},{quantity:'3'}])await expect(push({...row,...patch},1,JSON.stringify(patch))).rejects.toThrow('INVALID_DATA');
+ expect(await push({...row,quantity:9},1,'inventory-edit')).toEqual({ok:true,cursor:2});
+ expect((await t.query(anyApi.sync.pull,{token:alice,since:0})).changes[0].value.quantity).toBe(9);
+ expect(await push(null,2,'inventory-delete')).toEqual({ok:true,cursor:3});
+ expect((await t.query(anyApi.sync.pull,{token:alice,since:2})).changes[0].value).toBeNull();
+});
+it('validates inventory customer debt and payments without sharing data',async()=>{
+ const {t,alice,bob}=await setup();const tx={id:'s',date:'2026-09-12T10:00:00',type:'debt',currency:'IQD',amount:4500,details:'مبيعات'};const row={id:'c',name:'زبون',phone:'07700000000',details:'',transactions:[tx,{...tx,id:'p',type:'payment',amount:1000}]};
+ await t.mutation(anyApi.sync.push,{token:alice,operationId:'c-add',changes:[{collection:'inventoryCustomers',id:'c',value:row,baseVersion:0}]});expect((await t.query(anyApi.sync.pull,{token:bob,since:0})).changes).toEqual([]);
+ await expect(t.mutation(anyApi.sync.push,{token:alice,operationId:'c-invalid',changes:[{collection:'inventoryCustomers',id:'c',value:{...row,transactions:[{...tx,type:'payment'}]},baseVersion:1}]})).rejects.toThrow('INVALID_DATA');
+ const sale={id:'s',customerId:'c',customerName:'زبون',date:tx.date,currency:'IQD',total:3000,lines:[{itemId:'i',name:'مادة',quantity:2,purchasePrice:1000,salePrice:1500}]};
+ await t.mutation(anyApi.sync.push,{token:alice,operationId:'sale',changes:[{collection:'inventorySales',id:'s',value:sale,baseVersion:0}]});
+ await expect(t.mutation(anyApi.sync.push,{token:alice,operationId:'sale-bad',changes:[{collection:'inventorySales',id:'s',value:{...sale,total:4000},baseVersion:2}]})).rejects.toThrow('INVALID_DATA');
+});
+
+it('accepts Arabic delete code and immediately hides merchant without deleting another tenant',async()=>{const {t,admin,alice,bob,a}=await setup();await expect(t.mutation(anyApi.merchants.remove,{token:admin,id:a,code:'١٠٢'})).rejects.toThrow('INVALID_DELETE_CODE');await t.mutation(anyApi.merchants.remove,{token:admin,id:a,code:'١٠١'});expect((await t.query(anyApi.merchants.list,{token:admin})).some((r:{id:string})=>r.id===a)).toBe(false);await expect(t.query(anyApi.sync.head,{token:alice})).rejects.toThrow();expect(await t.query(anyApi.sync.head,{token:bob})).toEqual({cursor:0});});
+
+it('only admin can update public contact number',async()=>{const {t,admin,alice}=await setup();await expect(t.mutation(anyApi.settings.saveContact,{token:alice,phone:'07741112113'})).rejects.toThrow();await expect(t.mutation(anyApi.settings.saveContact,{token:admin,phone:'bad'})).rejects.toThrow('INVALID_PHONE');await t.mutation(anyApi.settings.saveContact,{token:admin,phone:'07741112113'});expect(await t.query(anyApi.settings.contact,{})).toEqual({phone:'9647741112113'});});
