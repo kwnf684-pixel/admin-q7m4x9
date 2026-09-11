@@ -12,6 +12,7 @@ import type * as access from "../access.js";
 import type * as auth from "../auth.js";
 import type * as merchants from "../merchants.js";
 import type * as model from "../model.js";
+import type * as settings from "../settings.js";
 import type * as sync from "../sync.js";
 
 import type {
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   merchants: typeof merchants;
   model: typeof model;
+  settings: typeof settings;
   sync: typeof sync;
 }>;
 
