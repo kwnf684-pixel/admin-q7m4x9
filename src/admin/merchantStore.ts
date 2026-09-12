@@ -27,7 +27,12 @@ export async function saveMerchant(id:string|null,input:{name:string;whatsapp:st
  if((!id||input.password)&&input.password.length<4)throw Error('كلمة المرور يجب ألا تقل عن 4 أحرف أو أرقام.');
  const {cloud,token}=connection();await cloud.action(ref<'action'>('merchants:save'),{token,...(id?{id}:{}),name,whatsapp,password:input.password,days,renew:input.renew===true});
 }
-export async function deleteMerchant(id:string,code:string){if(!code.trim())throw Error('أدخل رمز تأكيد الحذف.');const {cloud,token}=connection();await cloud.mutation(ref<'mutation'>('merchants:remove'),{token,id,code:code.trim().replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)))});publish({rows:snapshot.rows.filter(r=>r.id!==id)});retryMerchants();}
+export async function deleteMerchant(id:string,code:string){
+ const normalized=code.trim().replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c))).replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)));
+ if(normalized!=='101')throw Error('رمز تأكيد الحذف غير صحيح. أدخل رمز الحذف المخصص، وليس كلمة مرور الدخول.');
+ const {cloud,token}=connection();try{await cloud.mutation(ref<'mutation'>('merchants:remove'),{token,id,code:normalized});}catch(error){const message=error instanceof Error?error.message:'';if(message.includes('INVALID_DELETE_CODE'))throw Error('رمز تأكيد الحذف غير صحيح.',{cause:error});if(/UNAUTHORIZED|SESSION_EXPIRED/.test(message))throw Error('انتهت جلسة الإدارة. أعد تسجيل الدخول ثم حاول الحذف.',{cause:error});throw error;}
+ publish({rows:snapshot.rows.filter(r=>r.id!==id)});retryMerchants();
+}
 export async function freezeMerchant(id:string,frozen:boolean){const {cloud,token}=connection();await cloud.mutation(ref<'mutation'>('merchants:freeze'),{token,id,frozen});}
 export function subscriptionStatus(merchant:Pick<Merchant,'expiresAt'>&Partial<Pick<Merchant,'subscriptionDays'>>,now=Date.now()){
  const expires=Date.parse(merchant.expiresAt),day=86400000,elapsed=now-expires;
